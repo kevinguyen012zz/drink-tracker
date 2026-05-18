@@ -112,6 +112,7 @@ export default function App() {
   const [filterPeriod, setFilterPeriod] = useState("week");
   const [loading, setLoading] = useState(null);
   const [voiceText, setVoiceText] = useState("");
+  const [showShareCard, setShowShareCard] = useState(false);
   const fileRef = useRef(null);
   const recognitionRef = useRef(null);
 
@@ -127,6 +128,19 @@ export default function App() {
   const pickDrink = (drink, catColor) => {
     setForm({ name: drink.name, emoji: drink.emoji, price: String(drink.price), oz: String(drink.oz), abv: String(drink.abv), notes: "", catColor: catColor || drink.catColor });
     setCustomDate(getLocalDateTime());
+  };
+
+  // ⚡ ONE-TAP LOG (for My Usuals)
+  const oneTapLog = (drink) => {
+    const entry = {
+      id: Date.now(), name: drink.name, emoji: drink.emoji,
+      price: parseFloat(drink.price) || 0, oz: parseFloat(drink.oz) || 0,
+      abv: parseFloat(drink.abv) || 0, notes: "",
+      catColor: drink.catColor, photo: null,
+      timestamp: new Date().toISOString(),
+    };
+    setLogs(prev => [entry, ...prev]);
+    showToast(`✓ ${drink.name} logged!`, drink.catColor);
   };
 
   const logDrink = () => {
@@ -231,6 +245,17 @@ export default function App() {
   const totalOz = filtered.reduce((s, l) => s + l.oz, 0);
   const totalUnits = filtered.reduce((s, l) => s + (l.oz * l.abv / 100 * 0.789 / 14), 0);
 
+  // ⭐ MY USUALS — top 5 most-logged across ALL time
+  const myUsuals = (() => {
+    const counts = {};
+    logs.forEach(l => {
+      const key = l.name;
+      if (!counts[key]) counts[key] = { ...l, count: 0 };
+      counts[key].count++;
+    });
+    return Object.values(counts).sort((a, b) => b.count - a.count).slice(0, 5);
+  })();
+
   const weekdayStats = { weekday: { count: 0, spent: 0 }, weekend: { count: 0, spent: 0 } };
   logs.forEach(l => {
     const d = new Date(l.timestamp).getDay();
@@ -275,6 +300,64 @@ export default function App() {
     acc[l.name].spent += l.price;
     return acc;
   }, {});
+
+  // 📸 SHARE STATS
+  const shareStats = async () => {
+    const topDrinkName = Object.entries(byName).sort((a, b) => b[1].count - a[1].count)[0]?.[0] || "—";
+    const dayEmoji = ["☀️", "💼", "💼", "💼", "💼", "🎉", "🎉"];
+    const peakDayIdx = dayBreakdown.indexOf(Math.max(...dayBreakdown));
+    const peakDay = dayBreakdown[peakDayIdx] > 0 ? `${dayNames[peakDayIdx]} ${dayEmoji[peakDayIdx]}` : "—";
+
+    const text = `🍻 My Drink Tracker Stats (${filterPeriod})
+
+💸 Spent: $${totalSpent.toFixed(2)}
+🍺 Drinks: ${totalDrinks}
+💧 Fluid oz: ${totalOz.toFixed(0)}
+📊 Std units: ${totalUnits.toFixed(1)}
+
+⭐ Top drink: ${topDrinkName}
+📅 Peak day: ${peakDay}
+📈 ~${drinksPerWeek.toFixed(1)} drinks/week
+
+Track yours: drink-tracker-eosin.vercel.app`;
+
+    // Try native share first (iOS/mobile)
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: "My Drink Stats", text });
+        return;
+      } catch (e) {
+        // user cancelled or error — fall through
+      }
+    }
+    // Fallback: copy to clipboard
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast("📋 Stats copied — paste anywhere!", "#4ECDC4");
+    } catch {
+      // Final fallback: show modal
+      setShowShareCard(true);
+    }
+  };
+
+  const shareCardText = () => {
+    const topDrinkName = Object.entries(byName).sort((a, b) => b[1].count - a[1].count)[0]?.[0] || "—";
+    const dayEmoji = ["☀️", "💼", "💼", "💼", "💼", "🎉", "🎉"];
+    const peakDayIdx = dayBreakdown.indexOf(Math.max(...dayBreakdown));
+    const peakDay = dayBreakdown[peakDayIdx] > 0 ? `${dayNames[peakDayIdx]} ${dayEmoji[peakDayIdx]}` : "—";
+    return `🍻 My Drink Tracker Stats (${filterPeriod})
+
+💸 Spent: $${totalSpent.toFixed(2)}
+🍺 Drinks: ${totalDrinks}
+💧 Fluid oz: ${totalOz.toFixed(0)}
+📊 Std units: ${totalUnits.toFixed(1)}
+
+⭐ Top drink: ${topDrinkName}
+📅 Peak day: ${peakDay}
+📈 ~${drinksPerWeek.toFixed(1)} drinks/week
+
+Track yours: drink-tracker-eosin.vercel.app`;
+  };
 
   const fmt = (d) => {
     const date = new Date(d);
@@ -328,11 +411,10 @@ export default function App() {
     return "Log a Drink 🍻";
   };
 
-  // Quick date presets for the form
   const setDatePreset = (preset) => {
     const d = new Date();
     if (preset === "now") {
-      // keep current
+      // keep
     } else if (preset === "lastnight") {
       d.setDate(d.getDate() - 1);
       d.setHours(22, 0, 0, 0);
@@ -376,10 +458,67 @@ export default function App() {
         </div>
       )}
 
+      {/* 📸 SHARE CARD MODAL */}
+      {showShareCard && (
+        <div onClick={() => setShowShareCard(false)} style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 1000,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: "linear-gradient(160deg, #FF6B6B, #FF8E53)", borderRadius: 24, padding: "28px",
+            maxWidth: 380, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
+          }}>
+            <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 16 }}>🍻 My Stats ({filterPeriod})</div>
+            <pre style={{
+              fontFamily: "inherit", fontSize: 14, lineHeight: 1.6,
+              whiteSpace: "pre-wrap", margin: 0, color: "#fff",
+            }}>{shareCardText()}</pre>
+            <button onClick={() => {
+              navigator.clipboard.writeText(shareCardText());
+              showToast("📋 Copied!");
+              setShowShareCard(false);
+            }} style={{
+              marginTop: 16, width: "100%", padding: "14px", borderRadius: 14,
+              background: "rgba(0,0,0,0.3)", border: "none", color: "#fff",
+              fontSize: 15, fontWeight: 700, cursor: "pointer",
+            }}>📋 Copy to Clipboard</button>
+            <button onClick={() => setShowShareCard(false)} style={{
+              marginTop: 8, width: "100%", padding: "10px", borderRadius: 14,
+              background: "transparent", border: "none", color: "rgba(255,255,255,0.6)",
+              fontSize: 13, fontWeight: 600, cursor: "pointer",
+            }}>Close</button>
+          </div>
+        </div>
+      )}
+
       {activeTab === "Log" && (
         <div style={{ padding: "0 20px" }}>
           {!selectedCategory && !form && (
             <>
+              {/* ⭐ MY USUALS */}
+              {myUsuals.length > 0 && (
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: "rgba(255,255,255,0.5)", textTransform: "uppercase" }}>⭐ My Usuals</span>
+                    <span style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginLeft: 8 }}>tap to log instantly</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
+                    {myUsuals.map(u => (
+                      <button key={u.name} onClick={() => oneTapLog(u)} style={{
+                        background: `linear-gradient(135deg, ${u.catColor || "#FF6B6B"}33, ${u.catColor || "#FF6B6B"}11)`,
+                        border: `1.5px solid ${u.catColor || "#FF6B6B"}66`,
+                        borderRadius: 16, padding: "12px 14px", cursor: "pointer", flexShrink: 0,
+                        display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minWidth: 90, color: "#fff",
+                      }}>
+                        <span style={{ fontSize: 26 }}>{u.emoji}</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, textAlign: "center" }}>{u.name}</span>
+                        <span style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", fontWeight: 600 }}>{u.count}x · ${u.price}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 20 }}>
                 <button onClick={() => fileRef.current?.click()} style={quickBtn("#FF6B6B")}>
                   <span style={{ fontSize: 30 }}>📷</span>
@@ -397,24 +536,6 @@ export default function App() {
                   <span style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>Below ↓</span>
                 </button>
               </div>
-
-              {logs.length > 0 && (
-                <div style={{ marginBottom: 16 }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: 2, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", marginBottom: 10 }}>Repeat Recent</div>
-                  <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
-                    {[...new Map(logs.slice(0, 10).map(l => [l.name, l])).values()].slice(0, 6).map(l => (
-                      <button key={l.id} onClick={() => pickDrink(l, l.catColor)} style={{
-                        background: `${l.catColor || "#FF6B6B"}22`, border: `1px solid ${l.catColor || "#FF6B6B"}44`,
-                        borderRadius: 14, padding: "10px 14px", cursor: "pointer", flexShrink: 0,
-                        display: "flex", alignItems: "center", gap: 8, color: "#fff",
-                      }}>
-                        <span style={{ fontSize: 20 }}>{l.emoji}</span>
-                        <span style={{ fontSize: 13, fontWeight: 700 }}>{l.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: 2, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", marginBottom: 10 }}>Categories</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -484,7 +605,6 @@ export default function App() {
                 ))}
               </div>
 
-              {/* 📅 DATE & TIME PICKER */}
               <div style={{ background: "rgba(255,255,255,0.07)", borderRadius: 16, padding: "14px 18px", marginBottom: 14, border: "1px solid rgba(255,255,255,0.1)" }}>
                 <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>📅 When was this?</div>
                 <input type="datetime-local" value={customDate}
@@ -592,6 +712,16 @@ export default function App() {
 
       {activeTab === "Stats" && (
         <div style={{ padding: "0 20px" }}>
+          {/* 📸 SHARE BUTTON */}
+          {logs.length > 0 && (
+            <button onClick={shareStats} style={{
+              width: "100%", padding: "14px", borderRadius: 16,
+              background: "linear-gradient(135deg, #FF6B6B, #FF8E53)",
+              border: "none", color: "#fff", fontSize: 15, fontWeight: 800, cursor: "pointer",
+              boxShadow: "0 8px 24px rgba(255,107,107,0.3)", marginBottom: 16, letterSpacing: 0.5,
+            }}>📸 Share My Stats</button>
+          )}
+
           <FilterPills />
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 20 }}>
