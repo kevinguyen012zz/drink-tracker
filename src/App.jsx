@@ -94,6 +94,12 @@ const DRINK_CATEGORIES = [
 
 const ALL_DRINKS = DRINK_CATEGORIES.flatMap(c => c.drinks.map(d => ({ ...d, catColor: c.color })));
 
+function getLocalDateTime(d) {
+  const date = d ? new Date(d) : new Date();
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 16);
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState("Log");
   const [selectedCategory, setSelectedCategory] = useState(null);
@@ -101,6 +107,7 @@ export default function App() {
     try { return JSON.parse(localStorage.getItem("drinkLogs3") || "[]"); } catch { return []; }
   });
   const [form, setForm] = useState(null);
+  const [customDate, setCustomDate] = useState("");
   const [toast, setToast] = useState(null);
   const [filterPeriod, setFilterPeriod] = useState("week");
   const [loading, setLoading] = useState(null);
@@ -119,6 +126,7 @@ export default function App() {
 
   const pickDrink = (drink, catColor) => {
     setForm({ name: drink.name, emoji: drink.emoji, price: String(drink.price), oz: String(drink.oz), abv: String(drink.abv), notes: "", catColor: catColor || drink.catColor });
+    setCustomDate(getLocalDateTime());
   };
 
   const logDrink = () => {
@@ -128,11 +136,11 @@ export default function App() {
       price: parseFloat(form.price) || 0, oz: parseFloat(form.oz) || 0,
       abv: parseFloat(form.abv) || 0, notes: form.notes,
       catColor: form.catColor, photo: form.photo || null,
-      timestamp: new Date().toISOString(),
+      timestamp: customDate ? new Date(customDate).toISOString() : new Date().toISOString(),
     };
     setLogs(prev => [entry, ...prev]);
     showToast("✓ Drink logged!");
-    setSelectedCategory(null); setForm(null);
+    setSelectedCategory(null); setForm(null); setCustomDate("");
   };
 
   const deleteDrink = (id) => setLogs(prev => prev.filter(l => l.id !== id));
@@ -152,6 +160,7 @@ export default function App() {
         price: "10", oz: "12", abv: "5",
         notes: "", catColor: "#FF6B6B", photo: base64,
       });
+      setCustomDate(getLocalDateTime());
       showToast("📷 Photo attached — fill in details", "#4ECDC4");
     } catch (err) {
       showToast("Photo error", "#FF6B6B");
@@ -319,6 +328,22 @@ export default function App() {
     return "Log a Drink 🍻";
   };
 
+  // Quick date presets for the form
+  const setDatePreset = (preset) => {
+    const d = new Date();
+    if (preset === "now") {
+      // keep current
+    } else if (preset === "lastnight") {
+      d.setDate(d.getDate() - 1);
+      d.setHours(22, 0, 0, 0);
+    } else if (preset === "yesterday") {
+      d.setDate(d.getDate() - 1);
+    } else if (preset === "2days") {
+      d.setDate(d.getDate() - 2);
+    }
+    setCustomDate(getLocalDateTime(d));
+  };
+
   return (
     <div style={{
       minHeight: "100vh",
@@ -435,7 +460,7 @@ export default function App() {
 
           {form && (
             <>
-              <button onClick={() => setForm(null)} style={backBtn}>← Back</button>
+              <button onClick={() => { setForm(null); setCustomDate(""); }} style={backBtn}>← Back</button>
 
               <div style={{ background: "rgba(255,255,255,0.07)", borderRadius: 16, padding: "12px 18px", marginBottom: 14, border: "1px solid rgba(255,255,255,0.1)" }}>
                 <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginBottom: 4, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Drink Name</div>
@@ -457,6 +482,27 @@ export default function App() {
                       style={fieldInput(22, 800)} />
                   </div>
                 ))}
+              </div>
+
+              {/* 📅 DATE & TIME PICKER */}
+              <div style={{ background: "rgba(255,255,255,0.07)", borderRadius: 16, padding: "14px 18px", marginBottom: 14, border: "1px solid rgba(255,255,255,0.1)" }}>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>📅 When was this?</div>
+                <input type="datetime-local" value={customDate}
+                  onChange={e => setCustomDate(e.target.value)}
+                  style={{ ...fieldInput(15, 600), colorScheme: "dark", marginBottom: 8 }} />
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {[
+                    { label: "Now", key: "now" },
+                    { label: "Last Night", key: "lastnight" },
+                    { label: "Yesterday", key: "yesterday" },
+                    { label: "2 days ago", key: "2days" },
+                  ].map(p => (
+                    <button key={p.key} onClick={() => setDatePreset(p.key)} style={{
+                      background: "rgba(255,255,255,0.1)", border: "none", color: "#fff",
+                      padding: "6px 12px", borderRadius: 100, cursor: "pointer", fontSize: 11, fontWeight: 600,
+                    }}>{p.label}</button>
+                  ))}
+                </div>
               </div>
 
               <div style={{ background: "rgba(255,255,255,0.07)", borderRadius: 16, padding: "14px 18px", marginBottom: 20, border: "1px solid rgba(255,255,255,0.1)" }}>
@@ -677,6 +723,7 @@ export default function App() {
       <style>{`
         input::placeholder { color: rgba(255,255,255,0.25); }
         input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
+        input[type="datetime-local"] { color-scheme: dark; }
         * { box-sizing: border-box; }
       `}</style>
     </div>
